@@ -1,0 +1,15 @@
+# Tungt & genererat — återskapas av setup.sh / build_app.sh (committa aldrig)
+whisper.cpp/
+models/
+dist/
+bin/
+Viska.app/
+assets/Viska.iconset/
+
+# Landningssidans egna repo (github.com/johnsonaxel-collab/viska)
+deploy/
+
+# macOS / skräp
+.DS_Store
+__pycache__/
+*.pyc
