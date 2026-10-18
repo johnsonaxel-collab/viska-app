@@ -13,7 +13,7 @@ rm -rf "$APP"
 mkdir -p "$MACOS" "$RES"
 
 echo "==> compiling Swift app"
-swiftc -O app/Viska.swift -o "$MACOS/Viska" \
+swiftc -O app/core/*.swift app/ui/*.swift -o "$MACOS/Viska" \
   -framework Cocoa -framework AVFoundation \
   -framework ApplicationServices -framework CoreGraphics
 

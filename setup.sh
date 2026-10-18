@@ -4,8 +4,6 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 
-MODEL_NAME="${WF_MODEL:-ggml-small.bin}"
-
 echo "==> pip deps (cmake, pynput) into user site"
 python3 -m pip install --user --quiet --upgrade pip >/dev/null 2>&1 || true
 python3 -m pip install --user --quiet cmake pynput
@@ -26,17 +24,12 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build build --config Release -j"$(sysctl -n hw.ncpu)"
 cd "$HERE"
 
-echo "==> download model: $MODEL_NAME"
-mkdir -p models
-if [ ! -f "models/$MODEL_NAME" ]; then
-  curl -L --fail -o "models/$MODEL_NAME" \
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODEL_NAME"
-fi
+# Talmodellen (KB-Whisper) laddas ner av appen första gången den startar.
 
 echo "==> compile Swift recorder"
 mkdir -p bin
 swiftc -O record.swift -o bin/wfrecord
 
 echo ""
-echo "==> KLART. Starta med:  ./run.sh"
+echo "==> KLART. Bygg appen med:  ./build_app.sh"
 echo "    (första körningen ber om Mikrofon + Tillgänglighet i Systeminställningar)"

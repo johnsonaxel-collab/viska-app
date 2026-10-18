@@ -1,84 +1,87 @@
 # Viska
 
-Egen, lokal röstdiktering för macOS — likt Wispr Flow. Håll **höger ⌘**, prata,
-släpp. Talet transkriberas lokalt med `whisper.cpp` (ingen data lämnar datorn)
-och klistras in där markören står.
+Lokal röstdiktering på svenska för macOS, likt Wispr Flow. Håll **höger ⌘**,
+prata och släpp. Talet blir text på din egen dator med KB-Whisper från KBLab,
+och texten klistras in där markören står. Inget ljud lämnar datorn.
 
-Levereras som en riktig menyrads-app: **`Viska.app`** (ikon 🎙 uppe till
-höger). Skriven i Swift — inga Python-beroenden i själva appen.
+Appen ligger i menyraden som ett **V**. Grönt betyder redo, rött att den
+spelar in, orange att den skriver ut och grått att talmodellen laddas.
 
 ## Installera (en gång)
 
 ```bash
-cd ~/whisperflow
-./setup.sh        # bygger whisper.cpp + laddar ner modellen (om ej redan gjort)
+cd ~/code/viska-app
+./setup.sh        # bygger whisper.cpp (whisper-server och whisper-cli)
 ./build_app.sh    # bygger Viska.app
 ```
 
-Ingen Homebrew krävs.
+Ingen Homebrew krävs. Första gången appen startar laddar den ner talmodellen
+och visar hur långt den har kommit.
 
 ## Starta
 
 ```bash
-open ~/whisperflow/Viska.app     # eller dubbelklicka i Finder
+open ~/code/viska-app/Viska.app
 ```
-
-Ikonen 🎙 dyker upp i menyraden. Håll **höger ⌘**, prata, släpp → texten
-klistras in. Ikonen visar läget: 🎙 redo · 🔴 spelar in · ⏳ transkriberar.
 
 ### Behörigheter (första gången)
 
-macOS frågar om två saker för **Viska** — godkänn båda i
+macOS frågar om två saker för **Viska**. Godkänn båda i
 Systeminställningar → Integritet och säkerhet:
 
-- **Mikrofon** — för att spela in
-- **Tillgänglighet** — för att fånga snabbtangenten och klistra in (⌘V)
+- **Mikrofon** för att spela in.
+- **Tillgänglighet** för att fånga snabbtangenten och klistra in (⌘V).
 
-Efter att du gett Tillgänglighet: **avsluta och öppna appen igen** (menyn →
-Avsluta, sedan `open`). Snabbtangenten aktiveras först när behörigheten finns.
+Snabbtangenten slås på av sig själv när Tillgänglighet är godkänd.
 
 ## Använda
 
-- **Språk** — via menyn: Auto / Svenska / English (sparas mellan körningar).
-- **Avsluta** — via menyn, eller ⌘Q när menyn är öppen.
+- **Talmodell** i menyn:
+  - **Snabb** (KB-Whisper small, 175 MB). Cirka 0,4 s per mening på en M2.
+  - **Noggrann** (KB-Whisper medium, 540 MB). Cirka 1,1 s per mening.
 
-Bättre svenska (större modell, långsammare): hämta `medium` en gång och peka om:
-
-```bash
-WF_MODEL=ggml-medium.bin ./fetch_model.sh
-```
-Byt sedan modell i menyn är inte implementerat — sätt standard genom att köra:
-```bash
-defaults write com.axel.viska model ggml-medium.bin
-```
-och starta om appen. (Återställ med `defaults delete com.axel.viska model`.)
+  Byter du till en modell som saknas laddas den ner först.
+- **Språk** i menyn: svenska är standard.
+- **Tid** i menyn visar hur lång tid det tog från att du släppte ⌘ tills
+  texten klistrades in. Klicka för att öppna hela tidsloggen.
 
 ## Så funkar det
 
-- `app/Viska.swift` → hela appen: menyrad (NSStatusItem), global
-  snabbtangent (CGEventTap på höger ⌘), inspelning (AVAudioRecorder, 16 kHz
-  mono), transkribering via `whisper-cli`, inklistring (NSPasteboard + ⌘V).
-- `whisper.cpp/build/bin/whisper-cli` → lokal transkription (byggd med Metal).
-- `models/ggml-small.bin` → modellen.
+- `app/ui/` är gränssnittet: menyraden, snabbtangenten (CGEventTap på höger ⌘),
+  inspelningen (16 kHz mono), rutan med vågform och nedladdningsfönstret.
+- `app/core/` är logiken utan gränssnitt, så att den går att testa:
+  - `WhisperServer.swift` håller `whisper-server` igång i bakgrunden med
+    modellen laddad. Den lyssnar bara på 127.0.0.1. Varje diktering skickas
+    dit, så modellen behöver inte läsas in på nytt varje gång.
+  - `Models.swift` beskriver modellerna och laddar ner dem från Hugging Face.
+  - `Latency.swift` mäter tiden per steg.
 
-Appen letar upp `whisper.cpp` och `models/` relativt sin egen plats, så **låt
-`Viska.app` ligga kvar i `~/whisperflow/`** (eller kör om `build_app.sh`
-om du flyttar mappen).
+Viskas filer ligger i `~/Library/Application Support/Viska/`:
 
-## Terminal-alternativ (utan app)
+- `models/` innehåller talmodellerna.
+- `loggar/tider.tsv` har en rad per diktering med tid per steg.
+- `loggar/whisper-server.log` är talmotorns logg.
 
-Det finns även ett enklare CLI-läge om du hellre kör i terminalen. Det kräver
-`pynput` (`python3 -m pip install --user pynput`) och att **Terminal** har
-Mikrofon + Tillgänglighet:
+## Test
 
 ```bash
-./run.sh                 # eller: WF_LANG=sv ./run.sh
+./tests/run.sh                                   # enhetstester
+./tests/run.sh bench <modell.bin> <fil.wav>…     # mäter riktig transkribering
 ```
+
+Testljud kan du göra med Macens svenska röst:
+`say -v Alva -o t.wav --data-format=LEI16@16000 "Eh, hej, typ."`
+
+## Terminalläge (utan app)
+
+`./run.sh` startar ett äldre, enklare läge i Python. Det använder fortfarande
+OpenAIs Whisper-modeller i `models/` och kräver `pynput`.
 
 ## Felsökning
 
-- **Ikonen syns men snabbtangenten gör inget** → Tillgänglighet saknas; ge den
-  till Viska och starta om appen.
-- **Ingen inspelning / tyst** → Mikrofon-behörighet saknas, eller för kort tryck.
-- **Fel språk** → välj språk i menyn.
-- **"saknar: …" i menyn** → kör `./setup.sh` (bygger whisper-cli + hämtar modell).
+- **V:et syns men snabbtangenten gör inget.** Tillgänglighet saknas. Ge den
+  till Viska. Efter en ny byggning kan macOS kräva att du tar bort Viska ur
+  listan och lägger till den igen.
+- **V:et är grått länge.** Talmotorn startade inte. Läs
+  `loggar/whisper-server.log`.
+- **"saknar whisper-server" i menyn.** Kör `./setup.sh`.
