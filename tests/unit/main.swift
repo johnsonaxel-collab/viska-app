@@ -33,5 +33,30 @@ check(formatSeconds(1.234) == "1,23 s", "svenskt decimalkomma")
 let sw = Stopwatch(); sw.mark("a"); sw.mark("b")
 check(sw.stages.map { $0.name } == ["a", "b"] && sw.total >= 0, "stoppur")
 
+print("RewriteGuard")
+check(RewriteGuard.tidy("\"Hej Anna.\"") == "Hej Anna.", "tar bort citattecken")
+check(RewriteGuard.tidy("Text: Hej.") == "Hej.", "tar bort ekat Text:")
+check(RewriteGuard.problem(raw: "eh hej typ", rewritten: "Hej.") == nil, "kortare text godkänns")
+check(RewriteGuard.problem(raw: "hej", rewritten: "") != nil, "tomt svar stoppas")
+check(RewriteGuard.problem(raw: "kan du skicka filen",
+      rewritten: "Kan du skicka filen? Jag behöver den till mötet på måndag klockan nio, tack så mycket!") != nil,
+      "påhittad fortsättning stoppas")
+check(RewriteGuard.problem(raw: "vad är klockan", rewritten: "Här är svaret: tolv.") != nil,
+      "svar i stället för omskrivning stoppas")
+
+print("Prompts")
+check(Prompts.stripComments("// not\nRegel\n  // inte\nRegel 2") == "Regel\nRegel 2", "kommentarer tas bort")
+check(Prompts.load(Prompts.rewriteFile).contains("Hitta aldrig på"), "standardprompten skapas")
+check(FileManager.default.fileExists(atPath: Prompts.url(Prompts.rewriteFile).path), "promptfilen finns på disk")
+
+print("Reserv utan Ollama")
+let dead = Rewriter(client: OllamaClient(base: URL(string: "http://127.0.0.1:1")!), model: "x")
+let t0 = Date()
+var gotUnavailable = false
+do { _ = try dead.rewrite("hej") } catch RewriteError.unavailable { gotUnavailable = true } catch {}
+check(gotUnavailable, "kastar unavailable när Ollama saknas")
+check(Date().timeIntervalSince(t0) < 1, "ger upp på under 1 s")
+check(dead.client.models() == nil, "models() är nil när Ollama saknas")
+
 print(failures == 0 ? "\nAlla test gick igenom." : "\n\(failures) test misslyckades.")
 exit(failures == 0 ? 0 : 1)

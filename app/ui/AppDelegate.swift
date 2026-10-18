@@ -38,7 +38,7 @@ func tapCallback(proxy: CGEventTapProxy, type: CGEventType,
     return Unmanaged.passUnretained(event)
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let wavPath = NSTemporaryDirectory() + "viska.wav"
 
     // Config (persisted in UserDefaults)
@@ -64,6 +64,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var langItems: [String: NSMenuItem] = [:]
     var modelItems: [String: NSMenuItem] = [:]
 
+    // Rewriting with a local language model (Ollama)
+    var rewriteOn = UserDefaults.standard.object(forKey: "rewrite") as? Bool ?? true
+    let rewriter = Rewriter(model: UserDefaults.standard.string(forKey: "llmModel") ?? "qwen2.5:7b")
+    var ollamaModels: [String]?     // nil = Ollama not running
+    var rewriteMenu: NSMenu!
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         buildMenu()
@@ -78,6 +84,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             lastText = "saknar whisper-server, kör ./setup.sh"
             updateUI()
         }
+        refreshOllama(warm: true)
 
         if AXIsProcessTrusted() {
             setupEventTap()
@@ -97,6 +104,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     self.updateUI()
                 }
             }
+        }
+    }
+
+    /// Asks Ollama which models exist; optionally loads the chosen one into memory.
+    func refreshOllama(warm: Bool) {
+        let rewriter = self.rewriter
+        DispatchQueue.global(qos: .utility).async {
+            let models = rewriter.client.models()
+            DispatchQueue.main.async { self.ollamaModels = models }
+            if warm, let m = models, m.contains(rewriter.model) { rewriter.warmUp() }
         }
     }
 
@@ -192,6 +209,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         langParent.submenu = langMenu
         menu.addItem(langParent)
 
+        let rewriteParent = NSMenuItem(title: "Omskrivning", action: nil, keyEquivalent: "")
+        rewriteMenu = NSMenu()
+        rewriteMenu.delegate = self   // rebuilt each time it opens, so the model list is fresh
+        rewriteParent.submenu = rewriteMenu
+        menu.addItem(rewriteParent)
+
         let ptt = NSMenuItem(title: "Håll in höger ⌘ för att prata", action: nil, keyEquivalent: "")
         ptt.isEnabled = false
         menu.addItem(ptt)
@@ -214,6 +237,61 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let id = sender.representedObject as? String else { return }
         let m = ModelCatalog.byId(id)
         if m != model || !serverReady { useModel(m) }
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === rewriteMenu else { return }
+        menu.removeAllItems()
+        let toggle = NSMenuItem(title: "Skriv om till färdig text", action: #selector(toggleRewrite), keyEquivalent: "")
+        toggle.target = self
+        toggle.state = rewriteOn ? .on : .off
+        menu.addItem(toggle)
+        menu.addItem(NSMenuItem.separator())
+
+        if let models = ollamaModels, !models.isEmpty {
+            let head = NSMenuItem(title: "Språkmodell", action: nil, keyEquivalent: "")
+            head.isEnabled = false
+            menu.addItem(head)
+            for m in models {
+                let item = NSMenuItem(title: m, action: #selector(setLLM(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = m
+                item.state = (m == rewriter.model) ? .on : .off
+                menu.addItem(item)
+            }
+            if !models.contains(rewriter.model) {
+                let warn = NSMenuItem(title: "\(rewriter.model) saknas: kör ollama pull \(rewriter.model)", action: nil, keyEquivalent: "")
+                warn.isEnabled = false
+                menu.addItem(warn)
+            }
+        } else {
+            let off = NSMenuItem(title: ollamaModels == nil ? "Ollama är inte igång" : "Inga modeller i Ollama",
+                                 action: nil, keyEquivalent: "")
+            off.isEnabled = false
+            menu.addItem(off)
+        }
+        menu.addItem(NSMenuItem.separator())
+        let edit = NSMenuItem(title: "Redigera prompt…", action: #selector(editPrompt), keyEquivalent: "")
+        edit.target = self
+        menu.addItem(edit)
+        refreshOllama(warm: false)
+    }
+
+    @objc func toggleRewrite() {
+        rewriteOn.toggle()
+        UserDefaults.standard.set(rewriteOn, forKey: "rewrite")
+    }
+
+    @objc func setLLM(_ sender: NSMenuItem) {
+        guard let m = sender.representedObject as? String else { return }
+        rewriter.model = m
+        UserDefaults.standard.set(m, forKey: "llmModel")
+        refreshOllama(warm: true)
+    }
+
+    @objc func editPrompt() {
+        _ = Prompts.load(Prompts.rewriteFile)   // creates the file on first use
+        NSWorkspace.shared.open(Prompts.url(Prompts.rewriteFile))
     }
 
     @objc func openTimeLog() {
@@ -325,8 +403,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            let text = self.transcribe()
+            var text = self.transcribe()
             sw.mark("tal_till_text")
+            var note: String?
+            if self.rewriteOn, let raw = text, !raw.isEmpty {
+                DispatchQueue.main.async { self.hud.setStatus("Skriver om…", color: .systemPurple) }
+                do {
+                    text = try self.rewriter.rewrite(raw)
+                } catch {
+                    note = (error as? RewriteError).map { e -> String in
+                        if case .unavailable = e { return "Rå text: Ollama svarar inte" }
+                        return "Rå text: omskrivningen stoppades"
+                    } ?? "Rå text"
+                    RewriteLog.append(raw: raw, error: error.localizedDescription)
+                }
+                sw.mark("omskrivning")
+            }
             DispatchQueue.main.async {
                 self.state = .idle
                 if let t = text, !t.isEmpty {
@@ -334,13 +426,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     self.paste(t)
                     sw.mark("inklistring")
                     self.lastTime = formatSeconds(sw.total)
-                    LatencyLog.append(sw, model: self.model.repo, chars: t.count)
+                    let models = self.rewriteOn ? "\(self.model.repo)+\(self.rewriter.model)" : self.model.repo
+                    LatencyLog.append(sw, model: models, chars: t.count)
                     self.playSound("Glass")
                 } else {
                     self.lastText = "(inget hördes)"
                 }
                 self.updateUI()
-                self.hud.hide()
+                if let note = note {
+                    // Say why the text was pasted unedited, then fade out.
+                    self.hud.setStatus(note, color: .systemYellow)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { self.hud.hide() }
+                } else {
+                    self.hud.hide()
+                }
             }
         }
     }

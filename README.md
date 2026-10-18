@@ -42,6 +42,15 @@ Snabbtangenten slås på av sig själv när Tillgänglighet är godkänd.
 
   Byter du till en modell som saknas laddas den ner först.
 - **Språk** i menyn: svenska är standard.
+- **Omskrivning** i menyn gör rörigt tal till färdig text med en lokal
+  språkmodell i [Ollama](https://ollama.com). Den tar bort "eh", "typ" och
+  "liksom" och rättar meningar och skiljetecken. Standardmodellen är
+  `qwen2.5:7b` (cirka 2 s per mening på en M2). Hämta den en gång med
+  `/Applications/Ollama.app/Contents/Resources/ollama pull qwen2.5:7b`.
+  - **Redigera prompt…** öppnar `prompter/omskrivning.md`, där reglerna för
+    modellen står. Ändringen gäller från nästa diktering.
+  - Om Ollama inte svarar, eller om modellen verkar hitta på, klistras din
+    råa text in i stället. Sådana fall sparas i `loggar/omskrivning-fel.log`.
 - **Tid** i menyn visar hur lång tid det tog från att du släppte ⌘ tills
   texten klistrades in. Klicka för att öppna hela tidsloggen.
 
