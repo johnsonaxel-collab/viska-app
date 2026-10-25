@@ -112,18 +112,17 @@ enum RewriteGuard {
 }
 
 /// Notes rewrites that failed or were rejected, so the prompt can be improved.
+/// The lines hold dictated text, so only the latest ones are kept.
 enum RewriteLog {
     static var url: URL { Paths.logs.appendingPathComponent("omskrivning-fel.log") }
+    static let maxLines = 50
 
     static func append(raw: String, error: String) {
-        let line = "\(ISO8601DateFormatter().string(from: Date()))\t\(error)\t\(raw)\n"
-        if !FileManager.default.fileExists(atPath: url.path) {
-            FileManager.default.createFile(atPath: url.path, contents: nil)
-        }
-        if let h = try? FileHandle(forWritingTo: url) {
-            h.seekToEndOfFile()
-            h.write(line.data(using: .utf8)!)
-            h.closeFile()
-        }
+        let flat = raw.replacingOccurrences(of: "\n", with: " ")
+        let line = "\(ISO8601DateFormatter().string(from: Date()))\t\(error)\t\(flat)"
+        let old = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let lines = old.split(separator: "\n").map(String.init) + [line]
+        let kept = lines.suffix(maxLines).joined(separator: "\n") + "\n"
+        try? kept.write(to: url, atomically: true, encoding: .utf8)
     }
 }

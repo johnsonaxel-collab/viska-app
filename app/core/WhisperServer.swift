@@ -20,6 +20,9 @@ final class WhisperServer {
     let binary: String
     private(set) var modelPath: String?
     private(set) var port: Int = 0
+    /// A random path prefix for every endpoint. whisper-server answers any web
+    /// page (CORS *), so a page that guesses the port still cannot reach it.
+    private(set) var secretPath = ""
     private var process: Process?
     private let pidFile = Paths.support.appendingPathComponent("whisper-server.pid")
 
@@ -31,11 +34,13 @@ final class WhisperServer {
         stop()
         killOrphan()
         port = WhisperServer.freePort()
+        secretPath = "/" + UUID().uuidString.lowercased()
         let p = Process()
         p.executableURL = URL(fileURLWithPath: binary)
         p.arguments = ["-m", modelPath, "-l", language, "-fa", "-nt",
                        "-t", String(min(8, ProcessInfo.processInfo.activeProcessorCount)),
-                       "--host", "127.0.0.1", "--port", String(port)]
+                       "--host", "127.0.0.1", "--port", String(port),
+                       "--request-path", secretPath]
         let logURL = Paths.logs.appendingPathComponent("whisper-server.log")
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
         let log = try? FileHandle(forWritingTo: logURL)
@@ -73,7 +78,7 @@ final class WhisperServer {
         if let prompt = prompt, !prompt.isEmpty { fields.append(("prompt", prompt)) }
         let boundary = "viska-\(UUID().uuidString)"
         let audio = try Data(contentsOf: wav)
-        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/inference")!)
+        var req = URLRequest(url: endpoint("inference"))
         req.httpMethod = "POST"
         req.timeoutInterval = 120
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -87,8 +92,12 @@ final class WhisperServer {
 
     // MARK: Helpers
 
+    func endpoint(_ name: String) -> URL {
+        URL(string: "http://127.0.0.1:\(port)\(secretPath)/\(name)")!
+    }
+
     private func healthOK() -> Bool {
-        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/health")!)
+        var req = URLRequest(url: endpoint("health"))
         req.timeoutInterval = 1
         return (try? WhisperServer.send(req))?.1 == 200
     }

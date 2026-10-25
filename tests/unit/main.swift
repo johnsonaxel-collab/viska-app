@@ -16,7 +16,27 @@ check(ModelCatalog.byId("noggrann") == ModelCatalog.accurate, "hittar noggrann")
 check(ModelCatalog.byId(nil) == ModelCatalog.fast, "snabb är standard")
 check(ModelCatalog.byId("okänd") == ModelCatalog.fast, "okänt id ger snabb")
 check(ModelCatalog.fast.downloadURL.absoluteString
-      == "https://huggingface.co/KBLab/kb-whisper-small/resolve/main/ggml-model-q5_0.bin", "rätt nedladdningsadress")
+      == "https://huggingface.co/KBLab/kb-whisper-small/resolve/3564d61a42fc210ceaa55a22a96dd64478959c78/ggml-model-q5_0.bin",
+      "nedladdningen är låst till en version")
+check(ModelCatalog.all.allSatisfy { $0.sha256.count == 64 && $0.revision.count == 40 }, "alla modeller har fingeravtryck")
+
+print("Checksum")
+let tmpFile = FileManager.default.temporaryDirectory.appendingPathComponent("viska-sha-test")
+try? Data("abc".utf8).write(to: tmpFile)
+check(Checksum.sha256(of: tmpFile) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "SHA-256 stämmer")
+check(Checksum.sha256(of: URL(fileURLWithPath: "/finns/inte")) == nil, "saknad fil ger nil")
+try? FileManager.default.removeItem(at: tmpFile)
+
+print("Talmotorns adress")
+let ws = WhisperServer(binary: "/finns/inte")
+check(ws.endpoint("health").path == "/health" || ws.secretPath.isEmpty, "tom hemlig väg före start")
+
+print("RewriteLog")
+try? FileManager.default.removeItem(at: RewriteLog.url)
+for i in 1...(RewriteLog.maxLines + 10) { RewriteLog.append(raw: "rad \(i)\nmed radbrytning", error: "test") }
+let logLines = ((try? String(contentsOf: RewriteLog.url, encoding: .utf8)) ?? "").split(separator: "\n")
+check(logLines.count == RewriteLog.maxLines, "loggen behåller bara de senaste \(RewriteLog.maxLines)")
+check(logLines.last?.hasSuffix("rad \(RewriteLog.maxLines + 10) med radbrytning") == true, "senaste raden sist, utan radbrytning")
 
 print("Multipart")
 let body = Multipart.body(boundary: "B", fields: [("language", "sv")], fileField: "file",
