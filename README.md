@@ -1,5 +1,9 @@
 # Viska
 
+**[Ladda ner färdig app](https://github.com/johnsonaxel-collab/viska/releases/latest)** · **[viska.axeltuvemo.com](https://viska.axeltuvemo.com)**
+
+Den här mappen är källkoden. Vill du bara använda Viska hämtar du `Viska.dmg` via länken ovan.
+
 Lokal röstdiktering på svenska för macOS, likt Wispr Flow. Håll **höger ⌘**,
 prata och släpp. Talet blir text på din egen dator med KB-Whisper från KBLab,
 och texten klistras in där markören står. Inget ljud lämnar datorn.
@@ -10,8 +14,8 @@ spelar in, orange att den skriver ut och grått att talmodellen laddas.
 ## Installera (en gång)
 
 ```bash
-cd ~/code/viska-app
-./setup.sh        # bygger whisper.cpp (whisper-server och whisper-cli)
+cd viska-app
+./setup.sh        # hämtar och bygger whisper.cpp (whisper-server och whisper-cli)
 ./build_app.sh    # bygger Viska.app
 ```
 
@@ -21,7 +25,7 @@ och visar hur långt den har kommit.
 ## Starta
 
 ```bash
-open ~/code/viska-app/Viska.app
+open Viska.app
 ```
 
 ### Behörigheter (första gången)
@@ -94,3 +98,7 @@ OpenAIs Whisper-modeller i `models/` och kräver `pynput`.
 - **V:et är grått länge.** Talmotorn startade inte. Läs
   `loggar/whisper-server.log`.
 - **"saknar whisper-server" i menyn.** Kör `./setup.sh`.
+
+## Licens
+
+MIT, se [LICENSE](LICENSE). Talmodellen KB-Whisper kommer från KBLab och har sin egen licens.
